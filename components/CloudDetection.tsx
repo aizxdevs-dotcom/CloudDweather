@@ -20,7 +20,11 @@ export default function CloudDetection() {
         if (mounted) setHealth({ healthy: res.healthy, missing_keys: res.missing_keys })
       })
       .catch(() => {
-        if (mounted) setHealth({ healthy: false, missing_keys: [] })
+        // If the health check fails (network error or backend unreachable)
+        // surface the configured API URL so mobile users understand 'localhost'
+        // doesn't reach the backend when opened from a phone.
+        const apiUrl = (process.env.NEXT_PUBLIC_API_URL as string) || 'http://localhost:8000'
+        if (mounted) setHealth({ healthy: false, missing_keys: [apiUrl] })
       })
     return () => {
       mounted = false
@@ -77,6 +81,10 @@ export default function CloudDetection() {
           >
             {liveMode ? 'Stop Live' : 'Start Live'}
           </button>
+          {/* Quick guidelines for Live usage */}
+          <div className="mt-2 text-sm text-gray-600 max-w-md">
+            <p className="mb-1">Tips: Use the rear camera, hold steady for about 1s while capturing, and ensure the backend API is reachable from your phone (do not use <code>localhost</code> on mobile).</p>
+          </div>
         </div>
       </div>
 

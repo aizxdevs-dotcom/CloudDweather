@@ -11,6 +11,8 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
   const [lastResult, setLastResult] = useState<any | null>(null)
   const [intervalMs, setIntervalMs] = useState(Math.round(1000 / fps))
   const [error, setError] = useState<string | null>(null)
+  const [countdown, setCountdown] = useState<number>(0)
+  const [countdownRunning, setCountdownRunning] = useState<boolean>(false)
 
   useEffect(() => {
     return () => {
@@ -19,6 +21,7 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
         const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
         tracks.forEach((t) => t.stop())
       }
+      setCountdown(0)
     }
   }, [])
 
@@ -58,6 +61,7 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
       videoRef.current.srcObject = null
     }
     setStreaming(false)
+    setCountdown(0)
   }
 
   const captureLoop = async () => {
@@ -76,7 +80,58 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
       const ctx = canvas.getContext("2d")
       if (!ctx) return
       ctx.drawImage(video, 0, 0, w, h)
-      const blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), "image/jpeg", 0.8))
+      // Run a 3..2..1 countdown with a visible ring so users can steady the device.
+      // If another countdown is already running, skip starting a new one.
+      if (!countdownRunning) {
+        setCountdownRunning(true)
+        try {
+          for (let n = 3; n >= 1; n--) {
+            setCountdown(n)
+            // wait ~700ms per number for a clear 3..2..1 rhythm
+            // during this time the UI shows the number with a subtle spin animation
+            // which provides an animated progress cue without complicated timing code.
+            // Use small awaits so we remain responsive to streaming stop.
+            const stepMs = 700
+            const start = Date.now()
+            while (Date.now() - start < stepMs) {
+              if (!streaming) break
+              // sleep in small increments
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((r) => setTimeout(r, 50))
+            }
+            if (!streaming) break
+          }
+        } finally {
+          setCountdown(0)
+          setCountdownRunning(false)
+        }
+      }
+
+      // Resize/compress the captured frame to a reasonable max dimension before upload
+      const maxDim = 1024
+      let targetW = w
+      let targetH = h
+      const maxSide = Math.max(w, h)
+      if (maxSide > maxDim) {
+        const scale = maxDim / maxSide
+        targetW = Math.round(w * scale)
+        targetH = Math.round(h * scale)
+      }
+
+      let blob: Blob | null = null
+      if (targetW === w && targetH === h) {
+        blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), 'image/jpeg', 0.8))
+      } else {
+        // draw into a temporary resized canvas to reduce upload size and help backend
+        const resized = document.createElement('canvas')
+        resized.width = targetW
+        resized.height = targetH
+        const rctx = resized.getContext('2d')
+        if (rctx) {
+          rctx.drawImage(canvas, 0, 0, w, h, 0, 0, targetW, targetH)
+          blob = await new Promise<Blob | null>((res) => resized.toBlob((b) => res(b), 'image/jpeg', 0.8))
+        }
+      }
       if (!blob || blob.size === 0) {
         console.warn('Captured blob is empty or null; skipping this frame')
         // If blob is missing, wait and continue; on some mobile browsers canvas.toBlob
@@ -182,6 +237,16 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
 
   return (
     <div className="space-y-4">
+      {/* Live usage guidelines */}
+      <div className="p-3 rounded-md bg-blue-50 border border-blue-100 text-sm text-blue-800">
+        <strong className="block font-medium">Live detection tips</strong>
+        <ul className="mt-1 list-disc ml-5">
+          <li>Use the rear camera for better focus and resolution.</li>
+          <li>Hold the device steady for ~0.5–1s while a frame is captured.</li>
+          <li>Avoid pointing directly at the sun; aim so the cloud fills a good portion of the frame.</li>
+          <li>If using your phone, ensure the backend API is reachable (not set to localhost).</li>
+        </ul>
+      </div>
       <div className="flex items-center gap-3">
         <button
           onClick={() => (streaming ? stop() : start())}
@@ -210,6 +275,20 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
         <div className="bg-white p-4 rounded-lg relative overflow-hidden">
           <video ref={videoRef} className="w-full h-auto rounded-md bg-black object-cover aspect-video" playsInline muted />
           <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+          {countdown > 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="w-28 h-28 rounded-full bg-black/40 flex items-center justify-center relative">
+                {/* Animated ring using Tailwind's animate-spin on a subtle border */}
+                <div className="absolute inset-0 rounded-full border-4 border-white/30 animate-spin" />
+                <div className="relative z-10">
+                  <span className="text-white text-4xl font-extrabold">{countdown}</span>
+                </div>
+              </div>
+              <div className="mt-3 px-3 py-1 bg-black/40 rounded-md">
+                <span className="text-white text-sm">Hold steady — capturing frame</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white p-4 rounded-lg">
