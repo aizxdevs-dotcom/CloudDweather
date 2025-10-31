@@ -83,14 +83,14 @@ export default function CloudDetection() {
           </button>
           {/* Quick guidelines for Live usage */}
           <div className="mt-2 text-sm text-gray-600 max-w-md">
-            <p className="mb-1">Tips: Use the rear camera, hold steady for about 1s while capturing, and ensure the backend API is reachable from your phone (do not use <code>localhost</code> on mobile).</p>
+         
           </div>
         </div>
       </div>
 
       {liveMode ? (
         <div className="mt-4">
-          <LiveStream fps={1} />
+          <LiveStream />
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">

@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from "react"
 import { apiClient } from "@/lib/api"
 
-export default function LiveStream({ fps = 1 }: { fps?: number }) {
+export default function LiveStream() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const overlayRef = useRef<HTMLCanvasElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [streaming, setStreaming] = useState(false)
   const [lastResult, setLastResult] = useState<any | null>(null)
-  const [intervalMs, setIntervalMs] = useState(Math.round(1000 / fps))
+  // Fixed capture interval (ms). Removed FPS control to simplify UX.
+  const CAPTURE_INTERVAL_MS = 1000
   const [error, setError] = useState<string | null>(null)
   const [countdown, setCountdown] = useState<number>(0)
   const [countdownRunning, setCountdownRunning] = useState<boolean>(false)
@@ -138,7 +139,7 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
         // may fail briefly while the video is initializing.
         setTimeout(() => {
           if (streaming) captureLoop()
-        }, Math.max(200, intervalMs))
+  }, Math.max(200, CAPTURE_INTERVAL_MS))
         return
       }
 
@@ -160,8 +161,8 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
         console.error('Live detection error', err)
         const msg = err?.response?.data?.detail || err?.message || String(err)
         setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
-        // Keep streaming but wait a bit to avoid spamming the backend
-        await new Promise((r) => setTimeout(r, Math.max(500, intervalMs)))
+  // Keep streaming but wait a bit to avoid spamming the backend
+  await new Promise((r) => setTimeout(r, Math.max(500, CAPTURE_INTERVAL_MS)))
       }
     } catch (err) {
       console.error(err)
@@ -169,7 +170,7 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
       // schedule next capture
       setTimeout(() => {
         if (streaming) captureLoop()
-      }, intervalMs)
+      }, CAPTURE_INTERVAL_MS)
     }
   }
 
@@ -254,42 +255,34 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
         >
           {streaming ? "Stop Live" : "Start Live"}
         </button>
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">FPS</span>
-          <input
-            type="range"
-            min={0.2}
-            max={5}
-            step={0.2}
-            value={1000 / intervalMs}
-            onChange={(e) => {
-              const v = Number(e.target.value)
-              setIntervalMs(Math.round(1000 / v))
-            }}
-          />
-        </label>
+        {/* Fixed capture interval — FPS control removed to simplify UX */}
         {error && <p className="text-red-600">{error}</p>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white p-4 rounded-lg relative overflow-hidden">
-          <video ref={videoRef} className="w-full h-auto rounded-md bg-black object-cover aspect-video" playsInline muted />
-          <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-          {countdown > 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div className="w-28 h-28 rounded-full bg-black/40 flex items-center justify-center relative">
-                {/* Animated ring using Tailwind's animate-spin on a subtle border */}
-                <div className="absolute inset-0 rounded-full border-4 border-white/30 animate-spin" />
-                <div className="relative z-10">
-                  <span className="text-white text-4xl font-extrabold">{countdown}</span>
+        <div className="bg-white p-4 rounded-lg relative overflow-hidden min-h-[320px] md:min-h-0 flex items-center justify-center">
+            {/* Inner wrapper constrains the visible video area so we can enlarge the surrounding panel on mobile
+                without changing the actual video display size. */}
+            <div className="relative w-full max-w-3xl">
+              <video ref={videoRef} className="w-full h-auto rounded-md bg-black object-cover aspect-video" playsInline muted />
+              <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+
+              {countdown > 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <div className="w-28 h-28 rounded-full bg-black/40 flex items-center justify-center relative">
+                    {/* Animated ring using Tailwind's animate-spin on a subtle border */}
+                    <div className="absolute inset-0 rounded-full border-4 border-white/30 animate-spin" />
+                    <div className="relative z-10">
+                      <span className="text-white text-4xl font-extrabold">{countdown}</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 px-3 py-1 bg-black/40 rounded-md">
+                    <span className="text-white text-sm">Hold steady — capturing frame</span>
+                  </div>
                 </div>
-              </div>
-              <div className="mt-3 px-3 py-1 bg-black/40 rounded-md">
-                <span className="text-white text-sm">Hold steady — capturing frame</span>
-              </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
 
         <div className="bg-white p-4 rounded-lg">
           <h4 className="font-semibold">Last Detection</h4>
