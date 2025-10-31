@@ -77,20 +77,36 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
       if (!ctx) return
       ctx.drawImage(video, 0, 0, w, h)
       const blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), "image/jpeg", 0.8))
-      if (blob) {
-        // Send to backend
-        try {
-          const file = new File([blob], "frame.jpg", { type: "image/jpeg" })
-          const data = await apiClient.detectClouds(file)
-          setLastResult(data)
-          // draw overlay immediately if overlay canvas is present
-          if (overlayRef.current) {
-            drawBoxesOnOverlay(overlayRef.current, data)
-          }
-        } catch (err) {
-          // Keep streaming but show last error
-          console.error("Live detection error", err)
+      if (!blob || blob.size === 0) {
+        console.warn('Captured blob is empty or null; skipping this frame')
+        // If blob is missing, wait and continue; on some mobile browsers canvas.toBlob
+        // may fail briefly while the video is initializing.
+        setTimeout(() => {
+          if (streaming) captureLoop()
+        }, Math.max(200, intervalMs))
+        return
+      }
+
+      // Send to backend
+      try {
+        // Ensure file has a good name/type
+        const fileName = `frame-${Date.now()}.jpg`
+        const fileType = blob.type || 'image/jpeg'
+        const file = new File([blob], fileName, { type: fileType })
+
+        const data = await apiClient.detectClouds(file)
+        setLastResult(data)
+        // draw overlay immediately if overlay canvas is present
+        if (overlayRef.current) {
+          drawBoxesOnOverlay(overlayRef.current, data)
         }
+      } catch (err: any) {
+        // Surface backend error messages to the UI for easier debugging on mobile
+        console.error('Live detection error', err)
+        const msg = err?.response?.data?.detail || err?.message || String(err)
+        setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+        // Keep streaming but wait a bit to avoid spamming the backend
+        await new Promise((r) => setTimeout(r, Math.max(500, intervalMs)))
       }
     } catch (err) {
       console.error(err)
