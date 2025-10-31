@@ -25,10 +25,24 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
   const start = async () => {
     setError(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-      if (videoRef.current) {
+      // Prefer the back (environment) camera. Use an 'ideal' constraint so browsers
+      // fall back gracefully if the device doesn't expose a rear camera.
+      let stream: MediaStream | null = null
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })
+      } catch (e) {
+        // Some browsers/devices may reject the 'ideal' constraint; try a simpler request
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      }
+
+      if (videoRef.current && stream) {
         videoRef.current.srcObject = stream
-        await videoRef.current.play()
+        // Some browsers require play() to start rendering
+        try {
+          await videoRef.current.play()
+        } catch (playErr) {
+          // ignore play errors; stream will still be available
+        }
       }
       setStreaming(true)
       captureLoop()
@@ -126,20 +140,24 @@ export default function LiveStream({ fps = 1 }: { fps?: number }) {
         const w = bw * sx
         const h = bh * sy
 
-        // Box
-        ctx.strokeStyle = "rgba(16, 185, 129, 0.9)" // green
-        ctx.fillStyle = "rgba(16, 185, 129, 0.1)"
-        ctx.strokeRect(left, top, w, h)
-        ctx.fillRect(left, top, w, h)
+  // Box (blue) and subtle fill for visibility
+  ctx.lineWidth = 3
+  ctx.strokeStyle = "rgba(59,130,246,0.95)" // blue
+  ctx.fillStyle = "rgba(59,130,246,0.08)"
+  ctx.strokeRect(left, top, w, h)
+  ctx.fillRect(left, top, w, h)
 
-        // Label background
-        const label = `${p.class} ${(p.confidence * 100).toFixed(1)}%`
-        const textWidth = ctx.measureText(label).width + 8
-        ctx.fillStyle = "rgba(0,0,0,0.6)"
-        ctx.fillRect(left, Math.max(0, top - 22), textWidth, 20)
-        // Label text
-        ctx.fillStyle = "#fff"
-        ctx.fillText(label, left + 4, Math.max(12, top - 8))
+  // Label background and text (cloud type + confidence)
+  const label = `${p.class} ${(p.confidence * 100).toFixed(1)}%`
+  const textWidth = ctx.measureText(label).width + 10
+  const labelX = left
+  const labelY = Math.max(0, top - 26)
+  ctx.fillStyle = "rgba(59,130,246,0.9)"
+  ctx.fillRect(labelX, labelY, textWidth, 22)
+  // Label text
+  ctx.fillStyle = "#fff"
+  ctx.font = "bold 14px sans-serif"
+  ctx.fillText(label, labelX + 6, labelY + 16)
       })
     } catch (err) {
       console.error("Error drawing overlay", err)
